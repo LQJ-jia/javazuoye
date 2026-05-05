@@ -1,21 +1,8 @@
-# 笔记
-
-这里是你的笔记列表。
-
-## 快速入门
-
-- [快速开始指南](./quick-start.md) - 了解如何使用笔记博客
-- [示例笔记](./example.md) - 查看 Markdown 格式示例
-
-## 开始添加笔记
-
-1. 在此目录中创建新的 \`.md\` 文件
-2. 在配置文件中添加到 sidebar
-3. 推送到 GitHub 自动部署
-
+---
+layout: page
 ---
 
-**提示**：你可以按照分类组织笔记，例如创建子目录：
-- \`./programming/\` - 编程相关
-- \`./notes/\` - 学习笔记
-- \`./tools/\` - 工具使用教程
+<script setup>
+</script>
+
+<NoteManager />

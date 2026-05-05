@@ -21,20 +21,12 @@ export default defineConfig({
     ],
 
     sidebar: {
-      '/notes/': [
-        {
-          text: '笔记',
-          items: [
-            { text: '快速开始', link: '/notes/quick-start' },
-            { text: '示例笔记', link: '/notes/example' }
-          ]
-        }
-      ]
+      '/notes/': []
     },
 
     footer: {
-      message: '使用 VitePress + Vue3 构建',
-      copyright: 'Copyright © 2024 个人笔记博客'
+      message: '',
+      copyright: 'Copyright © 2026 个人笔记博客'
     },
 
     socialLinks: [
