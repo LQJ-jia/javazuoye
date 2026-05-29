@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>陆勤家的空间</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div id="app" v-cloak>
+    <section v-if="page === 'home'" class="home-screen">
+      <div class="home-shell">
+        <p class="eyebrow">Luqin Space</p>
+        <h1>欢迎来到陆勤家的空间</h1>
+        <p class="home-copy">在这里整理平时作业、获奖证明、本地图片和每一段备注说明。</p>
+        <button class="primary-action" @click="enterSpace">进入</button>
+      </div>
+    </section>
+
+    <section v-else class="workspace">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">陆</span>
+          <div>
+            <strong>陆勤家的空间</strong>
+            <small>学习资料管理</small>
+          </div>
+        </div>
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="nav-button"
+          :class="{ active: activeTab === tab.key }"
+          @click="switchTab(tab.key)"
+        >
+          <span>{{ tab.icon }}</span>
+          {{ tab.name }}
+        </button>
+      </aside>
+
+      <main class="content">
+        <header class="content-header">
+          <div>
+            <p class="eyebrow">{{ currentTab.name }}</p>
+            <h2>{{ currentTab.title }}</h2>
+          </div>
+          <button class="secondary-action" @click="resetForm">新增内容</button>
+        </header>
+
+        <section class="panel form-panel">
+          <form @submit.prevent="saveItem">
+            <div class="field-grid">
+              <label>
+                标题
+                <input v-model.trim="form.title" maxlength="120" placeholder="请输入标题">
+              </label>
+              <label>
+                本地图片
+                <input ref="fileInput" type="file" accept="image/*" @change="pickImage">
+              </label>
+              <label class="wide">
+                备注文字说明
+                <textarea v-model.trim="form.description" rows="4" placeholder="写下作业说明、获奖时间或补充备注"></textarea>
+              </label>
+            </div>
+            <div class="form-actions">
+              <span class="status-text">{{ statusText }}</span>
+              <button v-if="form.id" type="button" class="ghost-action" @click="resetForm">取消修改</button>
+              <button type="submit" class="primary-action compact">{{ form.id ? '保存修改' : '添加展示' }}</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="gallery" :aria-label="currentTab.name">
+          <article v-for="item in items" :key="item.id" class="item-card">
+            <div class="image-box">
+              <img v-if="item.imagePath" :src="item.imagePath" :alt="item.title">
+              <span v-else>暂无图片</span>
+            </div>
+            <div class="item-body">
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description || '暂无备注说明' }}</p>
+              <small>更新时间：{{ item.updatedAt }}</small>
+              <div class="card-actions">
+                <button class="ghost-action" @click="editItem(item)">修改</button>
+                <button class="danger-action" @click="deleteItem(item.id)">删除</button>
+              </div>
+            </div>
+          </article>
+          <div v-if="items.length === 0" class="empty-state">
+            <h3>这里还没有内容</h3>
+            <p>上传一张本地图片，再写一段备注，就能整齐展示在这里。</p>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script src="/assets/vue.global.prod.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
