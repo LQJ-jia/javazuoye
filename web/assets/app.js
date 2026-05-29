@@ -5,9 +5,12 @@ const STORAGE_KEY = 'luqin-space-items-v2';
 function getSupabaseConfig() {
   const cfg = window.SUPABASE_CONFIG || {};
   const hasRequired = !!(cfg.url && cfg.anonKey && cfg.bucket);
+  const normalizedUrl = String(cfg.url || '')
+    .replace(/\/rest\/v1\/?$/, '')
+    .replace(/\/$/, '');
   return {
     enabled: hasRequired,
-    url: cfg.url || '',
+    url: normalizedUrl,
     anonKey: cfg.anonKey || '',
     bucket: cfg.bucket || 'space-images'
   };
