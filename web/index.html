@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -12,8 +12,8 @@
       <div class="home-shell">
         <p class="eyebrow">Luqin Space</p>
         <h1>欢迎来到陆勤家的空间</h1>
-        <p class="home-copy">在这里整理平时作业、获奖证明、本地图片和每一段备注说明。</p>
-        <button class="primary-action" @click="enterSpace">进入</button>
+        <p class="home-copy">这里可以管理平时作业和获奖证明，支持增删改查、本地图片上传以及备注说明。</p>
+        <button class="primary-action" @click="enterSpace">点击进入</button>
       </div>
     </section>
 
@@ -89,7 +89,7 @@
           </article>
           <div v-if="items.length === 0" class="empty-state">
             <h3>这里还没有内容</h3>
-            <p>上传一张本地图片，再写一段备注，就能整齐展示在这里。</p>
+            <p>上传本地图片并填写备注后，内容会整齐展示在右侧区域。</p>
           </div>
         </section>
       </main>

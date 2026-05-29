@@ -208,7 +208,7 @@ public class AppServer {
             }
             File target = new File(WEB_ROOT, URLDecoder.decode(path.substring(1), "UTF-8")).getCanonicalFile();
             if (!target.getPath().startsWith(WEB_ROOT.getCanonicalPath()) || !target.isFile()) {
-                send(exchange, 404, "Not found");
+                sendText(exchange, 404, "Not found");
                 return;
             }
             Headers headers = exchange.getResponseHeaders();
@@ -227,7 +227,7 @@ public class AppServer {
             String path = exchange.getRequestURI().getPath().replaceFirst("^/uploads/?", "");
             File target = new File(UPLOAD_ROOT, URLDecoder.decode(path, "UTF-8")).getCanonicalFile();
             if (!target.getPath().startsWith(UPLOAD_ROOT.getCanonicalPath()) || !target.isFile()) {
-                send(exchange, 404, "Not found");
+                sendText(exchange, 404, "Not found");
                 return;
             }
             exchange.getResponseHeaders().set("Content-Type", contentType(target.getName()));
@@ -256,7 +256,7 @@ public class AppServer {
             String[] parts = raw.split(Pattern.quote(boundary));
             for (String part : parts) {
                 int split = part.indexOf("\r\n\r\n");
-                if (split < 0 || part.contains("Content-Disposition") == false) {
+                if (split < 0 || !part.contains("Content-Disposition")) {
                     continue;
                 }
                 String headers = part.substring(0, split);
@@ -346,6 +346,15 @@ public class AppServer {
     private static void send(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
+    }
+
+    private static void sendText(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream output = exchange.getResponseBody()) {
             output.write(bytes);

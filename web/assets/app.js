@@ -1,4 +1,4 @@
-const { createApp } = Vue;
+﻿const { createApp } = Vue;
 
 createApp({
   data() {
@@ -58,7 +58,7 @@ createApp({
         description: item.description,
         imageFile: null
       };
-      this.statusText = '正在修改，重新选择图片可替换原图';
+      this.statusText = '正在修改，可重新选择图片覆盖原图片';
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     async loadItems() {
