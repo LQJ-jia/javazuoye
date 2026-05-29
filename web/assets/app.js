@@ -1,6 +1,6 @@
 const { createApp } = Vue;
 
-const STORAGE_KEY = 'luqin-space-items-v1';
+const STORAGE_KEY = 'luqin-space-items-v2';
 
 createApp({
   data() {
@@ -46,7 +46,7 @@ createApp({
       try {
         const response = await fetch(`./api/items?category=${encodeURIComponent(this.activeTab)}`, { method: 'GET' });
         return response.ok;
-      } catch (error) {
+      } catch {
         return false;
       }
     },
@@ -59,20 +59,52 @@ createApp({
       const [file] = event.target.files;
       this.form.imageFile = file || null;
       this.form.imageDataUrl = '';
+
       if (!file) {
         this.statusText = '填写内容后可添加到右侧展示区';
         return;
       }
-      this.statusText = `已选择图片：${file.name}`;
-      this.form.imageDataUrl = await this.fileToDataUrl(file);
+
+      this.statusText = `正在处理图片：${file.name}`;
+      try {
+        this.form.imageDataUrl = await this.fileToCompressedDataUrl(file);
+        this.statusText = `已选择图片：${file.name}`;
+      } catch (error) {
+        this.form.imageFile = null;
+        this.form.imageDataUrl = '';
+        this.statusText = '图片处理失败，请换一张图片再试';
+      }
     },
     fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result || '');
+        reader.onload = () => resolve(String(reader.result || ''));
         reader.onerror = () => reject(new Error('图片读取失败'));
         reader.readAsDataURL(file);
       });
+    },
+    async fileToCompressedDataUrl(file) {
+      const sourceDataUrl = await this.fileToDataUrl(file);
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片解码失败'));
+        img.src = sourceDataUrl;
+      });
+
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, width, height);
+
+      // 优先转 JPEG，明显降低 localStorage 占用
+      return canvas.toDataURL('image/jpeg', 0.82);
     },
     resetForm() {
       this.form = {
@@ -116,7 +148,7 @@ createApp({
         }
         this.items = await response.json();
         this.statusText = '内容已加载';
-      } catch (error) {
+      } catch {
         this.useApi = false;
         this.loadItemsFromLocal();
         this.statusText = '接口不可用，已切换到静态演示模式';
@@ -133,12 +165,17 @@ createApp({
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : [];
-      } catch (error) {
+      } catch {
         return [];
       }
     },
     writeLocalItems(items) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        return true;
+      } catch {
+        return false;
+      }
     },
     async saveItem() {
       if (!this.form.title && this.form.imageFile) {
@@ -149,6 +186,7 @@ createApp({
         this.statusText = '请先填写标题，或先选择图片';
         return;
       }
+
       if (this.useApi) {
         await this.saveItemByApi();
       } else {
@@ -174,7 +212,7 @@ createApp({
         }
         await this.loadItems();
         this.resetForm();
-      } catch (error) {
+      } catch {
         this.useApi = false;
         await this.saveItemByLocal();
         this.statusText = '接口不可用，已转为本地保存';
@@ -183,6 +221,7 @@ createApp({
     async saveItemByLocal() {
       const allItems = this.readLocalItems();
       const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
       if (this.form.id) {
         const target = allItems.find((x) => x.id === this.form.id);
         if (target) {
@@ -206,7 +245,13 @@ createApp({
         };
         allItems.push(item);
       }
-      this.writeLocalItems(allItems);
+
+      const ok = this.writeLocalItems(allItems);
+      if (!ok) {
+        this.statusText = '保存失败：图片过大，请换更小的图片或删除旧内容后重试';
+        return;
+      }
+
       this.loadItemsFromLocal();
       this.resetForm();
     },
@@ -228,7 +273,7 @@ createApp({
           throw new Error(await response.text());
         }
         await this.loadItems();
-      } catch (error) {
+      } catch {
         this.useApi = false;
         this.deleteItemByLocal(id);
       }
