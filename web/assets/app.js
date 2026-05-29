@@ -19,6 +19,7 @@ createApp({
         imageFile: null,
         imageDataUrl: ''
       },
+      previewItem: null,
       useApi: false,
       statusText: '填写内容后可添加到右侧展示区'
     };
@@ -140,8 +141,12 @@ createApp({
       localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     },
     async saveItem() {
+      if (!this.form.title && this.form.imageFile) {
+        const dot = this.form.imageFile.name.lastIndexOf('.');
+        this.form.title = dot > 0 ? this.form.imageFile.name.slice(0, dot) : this.form.imageFile.name;
+      }
       if (!this.form.title) {
-        this.statusText = '请先填写标题';
+        this.statusText = '请先填写标题，或先选择图片';
         return;
       }
       if (this.useApi) {
@@ -232,6 +237,13 @@ createApp({
       const allItems = this.readLocalItems().filter((item) => item.id !== id);
       this.writeLocalItems(allItems);
       this.loadItemsFromLocal();
+    },
+    openPreview(item) {
+      if (!item.imagePath) return;
+      this.previewItem = item;
+    },
+    closePreview() {
+      this.previewItem = null;
     }
   }
 }).mount('#app');

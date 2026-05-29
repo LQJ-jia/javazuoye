@@ -74,7 +74,7 @@
         <section class="gallery" :aria-label="currentTab.name">
           <article v-for="item in items" :key="item.id" class="item-card">
             <div class="image-box">
-              <img v-if="item.imagePath" :src="item.imagePath" :alt="item.title">
+              <img v-if="item.imagePath" :src="item.imagePath" :alt="item.title" @click="openPreview(item)">
               <span v-else>暂无图片</span>
             </div>
             <div class="item-body">
@@ -92,6 +92,15 @@
             <p>上传本地图片并填写备注后，内容会整齐展示在右侧区域。</p>
           </div>
         </section>
+
+        <div v-if="previewItem" class="preview-mask" @click.self="closePreview">
+          <div class="preview-panel">
+            <button class="preview-close" @click="closePreview">关闭</button>
+            <img :src="previewItem.imagePath" :alt="previewItem.title">
+            <h3>{{ previewItem.title }}</h3>
+            <p>{{ previewItem.description || '暂无备注说明' }}</p>
+          </div>
+        </div>
       </main>
     </section>
   </div>
