@@ -2,6 +2,17 @@ const { createApp } = Vue;
 
 const STORAGE_KEY = 'luqin-space-items-v2';
 
+function getSupabaseConfig() {
+  const cfg = window.SUPABASE_CONFIG || {};
+  const hasRequired = !!(cfg.url && cfg.anonKey && cfg.bucket);
+  return {
+    enabled: hasRequired,
+    url: cfg.url || '',
+    anonKey: cfg.anonKey || '',
+    bucket: cfg.bucket || 'space-images'
+  };
+}
+
 createApp({
   data() {
     return {
@@ -20,13 +31,21 @@ createApp({
         imageDataUrl: ''
       },
       previewItem: null,
-      useApi: false,
+      useCloud: false,
+      supabase: getSupabaseConfig(),
       statusText: '填写内容后可添加到右侧展示区'
     };
   },
   computed: {
     currentTab() {
       return this.tabs.find((tab) => tab.key === this.activeTab) || this.tabs[0];
+    },
+    requestHeaders() {
+      if (!this.supabase.enabled) return {};
+      return {
+        apikey: this.supabase.anonKey,
+        Authorization: `Bearer ${this.supabase.anonKey}`
+      };
     }
   },
   methods: {
@@ -36,15 +55,20 @@ createApp({
     },
     async detectModeAndLoad() {
       this.statusText = '正在初始化...';
-      this.useApi = await this.tryApiHealth();
+      if (this.supabase.enabled) {
+        this.useCloud = await this.tryCloudHealth();
+      }
       await this.loadItems();
-      if (!this.useApi) {
-        this.statusText = '当前为静态演示模式：数据保存在当前浏览器';
+      if (this.useCloud) {
+        this.statusText = '当前为云端模式：所有人都可见';
+      } else {
+        this.statusText = '当前为本地演示模式：数据保存在当前浏览器';
       }
     },
-    async tryApiHealth() {
+    async tryCloudHealth() {
       try {
-        const response = await fetch(`./api/items?category=${encodeURIComponent(this.activeTab)}`, { method: 'GET' });
+        const url = `${this.supabase.url}/rest/v1/space_items?select=id&limit=1`;
+        const response = await fetch(url, { headers: this.requestHeaders });
         return response.ok;
       } catch {
         return false;
@@ -69,7 +93,7 @@ createApp({
       try {
         this.form.imageDataUrl = await this.fileToCompressedDataUrl(file);
         this.statusText = `已选择图片：${file.name}`;
-      } catch (error) {
+      } catch {
         this.form.imageFile = null;
         this.form.imageDataUrl = '';
         this.statusText = '图片处理失败，请换一张图片再试';
@@ -102,9 +126,16 @@ createApp({
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(image, 0, 0, width, height);
-
-      // 优先转 JPEG，明显降低 localStorage 占用
       return canvas.toDataURL('image/jpeg', 0.82);
+    },
+    dataUrlToBlob(dataUrl) {
+      const parts = dataUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const binary = atob(parts[1]);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
     },
     resetForm() {
       this.form = {
@@ -114,9 +145,9 @@ createApp({
         imageFile: null,
         imageDataUrl: ''
       };
-      this.statusText = this.useApi
-        ? '填写内容后可添加到右侧展示区'
-        : '静态演示模式：数据保存在当前浏览器';
+      this.statusText = this.useCloud
+        ? '当前为云端模式：所有人都可见'
+        : '当前为本地演示模式：数据保存在当前浏览器';
       if (this.$refs.fileInput) {
         this.$refs.fileInput.value = '';
       }
@@ -134,24 +165,37 @@ createApp({
     },
     async loadItems() {
       this.statusText = '正在读取内容...';
-      if (this.useApi) {
-        await this.loadItemsFromApi();
+      if (this.useCloud) {
+        await this.loadItemsFromCloud();
       } else {
         this.loadItemsFromLocal();
       }
     },
-    async loadItemsFromApi() {
+    async loadItemsFromCloud() {
       try {
-        const response = await fetch(`./api/items?category=${encodeURIComponent(this.activeTab)}`);
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-        this.items = await response.json();
-        this.statusText = '内容已加载';
+        const query = new URLSearchParams({
+          select: 'id,category,title,description,image_path,created_at,updated_at',
+          category: `eq.${this.activeTab}`,
+          order: 'updated_at.desc'
+        });
+        const url = `${this.supabase.url}/rest/v1/space_items?${query.toString()}`;
+        const response = await fetch(url, { headers: this.requestHeaders });
+        if (!response.ok) throw new Error(await response.text());
+        const rows = await response.json();
+        this.items = rows.map((row) => ({
+          id: row.id,
+          category: row.category,
+          title: row.title,
+          description: row.description || '',
+          imagePath: row.image_path || '',
+          createdAt: row.created_at || '',
+          updatedAt: row.updated_at || ''
+        }));
+        this.statusText = '内容已加载（云端）';
       } catch {
-        this.useApi = false;
+        this.useCloud = false;
         this.loadItemsFromLocal();
-        this.statusText = '接口不可用，已切换到静态演示模式';
+        this.statusText = '云端连接失败，已切换到本地模式';
       }
     },
     loadItemsFromLocal() {
@@ -187,35 +231,86 @@ createApp({
         return;
       }
 
-      if (this.useApi) {
-        await this.saveItemByApi();
+      if (this.useCloud) {
+        await this.saveItemByCloud();
       } else {
         await this.saveItemByLocal();
       }
     },
-    async saveItemByApi() {
-      const data = new FormData();
-      data.append('category', this.activeTab);
-      data.append('title', this.form.title);
-      data.append('description', this.form.description);
-      if (this.form.imageFile) {
-        data.append('image', this.form.imageFile);
+    async uploadImageToCloud() {
+      if (!this.form.imageDataUrl) return '';
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+      const objectPath = `${this.activeTab}/${fileName}`;
+      const blob = this.dataUrlToBlob(this.form.imageDataUrl);
+      const uploadUrl = `${this.supabase.url}/storage/v1/object/${this.supabase.bucket}/${objectPath}`;
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          ...this.requestHeaders,
+          'Content-Type': 'image/jpeg',
+          'x-upsert': 'true'
+        },
+        body: blob
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
       }
-
-      const url = this.form.id ? `./api/items?id=${this.form.id}` : './api/items';
-      const method = this.form.id ? 'PUT' : 'POST';
+      return `${this.supabase.url}/storage/v1/object/public/${this.supabase.bucket}/${objectPath}`;
+    },
+    async saveItemByCloud() {
       this.statusText = this.form.id ? '正在保存修改...' : '正在添加...';
       try {
-        const response = await fetch(url, { method, body: data });
-        if (!response.ok) {
-          throw new Error(await response.text());
+        const now = new Date().toISOString();
+        let imagePath = this.form.id ? (this.items.find((x) => x.id === this.form.id)?.imagePath || '') : '';
+        if (this.form.imageDataUrl && this.form.imageFile) {
+          imagePath = await this.uploadImageToCloud();
         }
-        await this.loadItems();
+
+        if (this.form.id) {
+          const url = `${this.supabase.url}/rest/v1/space_items?id=eq.${this.form.id}`;
+          const payload = {
+            category: this.activeTab,
+            title: this.form.title,
+            description: this.form.description,
+            image_path: imagePath,
+            updated_at: now
+          };
+          const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+              ...this.requestHeaders,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation'
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!response.ok) throw new Error(await response.text());
+        } else {
+          const url = `${this.supabase.url}/rest/v1/space_items`;
+          const payload = {
+            category: this.activeTab,
+            title: this.form.title,
+            description: this.form.description,
+            image_path: imagePath,
+            created_at: now,
+            updated_at: now
+          };
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              ...this.requestHeaders,
+              'Content-Type': 'application/json',
+              Prefer: 'return=representation'
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!response.ok) throw new Error(await response.text());
+        }
+
+        await this.loadItemsFromCloud();
         this.resetForm();
       } catch {
-        this.useApi = false;
-        await this.saveItemByLocal();
-        this.statusText = '接口不可用，已转为本地保存';
+        this.statusText = '云端保存失败，请检查 Supabase 配置与策略';
       }
     },
     async saveItemByLocal() {
@@ -234,7 +329,7 @@ createApp({
           }
         }
       } else {
-        const item = {
+        allItems.push({
           id: Date.now(),
           category: this.activeTab,
           title: this.form.title,
@@ -242,8 +337,7 @@ createApp({
           imagePath: this.form.imageDataUrl || '',
           createdAt: now,
           updatedAt: now
-        };
-        allItems.push(item);
+        });
       }
 
       const ok = this.writeLocalItems(allItems);
@@ -251,7 +345,6 @@ createApp({
         this.statusText = '保存失败：图片过大，请换更小的图片或删除旧内容后重试';
         return;
       }
-
       this.loadItemsFromLocal();
       this.resetForm();
     },
@@ -259,23 +352,24 @@ createApp({
       if (!confirm('确定删除这条内容吗？')) {
         return;
       }
-      if (this.useApi) {
-        await this.deleteItemByApi(id);
+      if (this.useCloud) {
+        await this.deleteItemByCloud(id);
       } else {
         this.deleteItemByLocal(id);
       }
     },
-    async deleteItemByApi(id) {
+    async deleteItemByCloud(id) {
       this.statusText = '正在删除...';
       try {
-        const response = await fetch(`./api/items?id=${id}`, { method: 'DELETE' });
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-        await this.loadItems();
+        const url = `${this.supabase.url}/rest/v1/space_items?id=eq.${id}`;
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers: this.requestHeaders
+        });
+        if (!response.ok) throw new Error(await response.text());
+        await this.loadItemsFromCloud();
       } catch {
-        this.useApi = false;
-        this.deleteItemByLocal(id);
+        this.statusText = '云端删除失败，请稍后重试';
       }
     },
     deleteItemByLocal(id) {
