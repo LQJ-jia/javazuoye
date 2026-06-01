@@ -44,32 +44,8 @@
             <p class="eyebrow">{{ currentTab.name }}</p>
             <h2>{{ currentTab.title }}</h2>
           </div>
-          <button class="secondary-action" @click="resetForm">新增内容</button>
+          <button class="secondary-action" @click="openCreateForm">新增内容</button>
         </header>
-
-        <section class="panel form-panel">
-          <form @submit.prevent="saveItem">
-            <div class="field-grid">
-              <label>
-                标题
-                <input v-model.trim="form.title" maxlength="120" placeholder="请输入标题">
-              </label>
-              <label>
-                本地图片
-                <input ref="fileInput" type="file" accept="image/*" @change="pickImage">
-              </label>
-              <label class="wide">
-                备注文字说明
-                <textarea v-model.trim="form.description" rows="4" placeholder="写下作业说明、获奖时间或补充备注"></textarea>
-              </label>
-            </div>
-            <div class="form-actions">
-              <span class="status-text">{{ statusText }}</span>
-              <button v-if="form.id" type="button" class="ghost-action" @click="resetForm">取消修改</button>
-              <button type="submit" class="primary-action compact">{{ form.id ? '保存修改' : '添加展示' }}</button>
-            </div>
-          </form>
-        </section>
 
         <section class="gallery" :aria-label="currentTab.name">
           <article v-for="item in items" :key="item.id" class="item-card">
@@ -80,7 +56,7 @@
             <div class="item-body">
               <h3>{{ item.title }}</h3>
               <p>{{ item.description || '暂无备注说明' }}</p>
-              <small>更新时间：{{ item.updatedAt }}</small>
+              <small>时间：{{ formatDisplayTime(item.createdAt || item.updatedAt) }}</small>
               <div class="card-actions">
                 <button class="ghost-action" @click="editItem(item)">修改</button>
                 <button class="danger-action" @click="deleteItem(item.id)">删除</button>
@@ -92,6 +68,49 @@
             <p>上传本地图片并填写备注后，内容会整齐展示在右侧区域。</p>
           </div>
         </section>
+
+        <div v-if="showEditor" class="editor-mask" @click.self="closeEditor">
+          <section class="editor-panel" aria-label="内容编辑">
+            <header class="editor-header">
+              <div>
+                <p class="eyebrow">{{ currentTab.name }}</p>
+                <h3>{{ form.id ? '修改内容' : '新增内容' }}</h3>
+              </div>
+              <button class="preview-close" type="button" @click="closeEditor">关闭</button>
+            </header>
+
+            <form @submit.prevent="saveItem">
+              <div class="field-grid">
+                <label>
+                  标题
+                  <input v-model.trim="form.title" maxlength="120" placeholder="请输入标题">
+                </label>
+                <label>
+                  时间
+                  <input v-model="form.itemTime" type="datetime-local">
+                </label>
+                <label>
+                  本地图片
+                  <input ref="fileInput" type="file" accept="image/*" @change="pickImage">
+                </label>
+                <label class="wide">
+                  备注文字说明
+                  <textarea v-model.trim="form.description" rows="5" placeholder="写下作业说明、获奖时间或补充备注"></textarea>
+                </label>
+              </div>
+
+              <div v-if="form.imageDataUrl" class="editor-preview">
+                <img :src="form.imageDataUrl" alt="已选择图片预览">
+              </div>
+
+              <div class="form-actions">
+                <span class="status-text">{{ statusText }}</span>
+                <button type="button" class="ghost-action" @click="closeEditor">取消</button>
+                <button type="submit" class="primary-action compact">{{ form.id ? '保存修改' : '添加展示' }}</button>
+              </div>
+            </form>
+          </section>
+        </div>
 
         <div v-if="previewItem" class="preview-mask" @click.self="closePreview">
           <div class="preview-panel">

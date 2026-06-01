@@ -2,14 +2,21 @@ const { createApp } = Vue;
 
 const STORAGE_KEY = 'luqin-space-items-v2';
 
+function toDateTimeLocalValue(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
 function getSupabaseConfig() {
   const cfg = window.SUPABASE_CONFIG || {};
-  const hasRequired = !!(cfg.url && cfg.anonKey && cfg.bucket);
   const normalizedUrl = String(cfg.url || '')
     .replace(/\/rest\/v1\/?$/, '')
     .replace(/\/$/, '');
+
   return {
-    enabled: hasRequired,
+    enabled: !!(normalizedUrl && cfg.anonKey && cfg.bucket),
     url: normalizedUrl,
     anonKey: cfg.anonKey || '',
     bucket: cfg.bucket || 'space-images'
@@ -26,17 +33,19 @@ createApp({
         { key: 'award', name: '获奖证明', title: '获奖证明展示', icon: '奖' }
       ],
       items: [],
+      showEditor: false,
+      previewItem: null,
       form: {
         id: null,
         title: '',
         description: '',
+        itemTime: toDateTimeLocalValue(new Date()),
         imageFile: null,
         imageDataUrl: ''
       },
-      previewItem: null,
       useCloud: false,
       supabase: getSupabaseConfig(),
-      statusText: '填写内容后可添加到右侧展示区'
+      statusText: '准备就绪'
     };
   },
   computed: {
@@ -52,21 +61,25 @@ createApp({
     }
   },
   methods: {
+    blankForm() {
+      return {
+        id: null,
+        title: '',
+        description: '',
+        itemTime: toDateTimeLocalValue(new Date()),
+        imageFile: null,
+        imageDataUrl: ''
+      };
+    },
     enterSpace() {
       this.page = 'space';
       this.detectModeAndLoad();
     },
     async detectModeAndLoad() {
       this.statusText = '正在初始化...';
-      if (this.supabase.enabled) {
-        this.useCloud = await this.tryCloudHealth();
-      }
+      this.useCloud = this.supabase.enabled && await this.tryCloudHealth();
       await this.loadItems();
-      if (this.useCloud) {
-        this.statusText = '当前为云端模式：所有人都可见';
-      } else {
-        this.statusText = '当前为本地演示模式：数据保存在当前浏览器';
-      }
+      this.statusText = this.useCloud ? '当前为云端模式：所有人都可见' : '当前为本地演示模式';
     },
     async tryCloudHealth() {
       try {
@@ -79,22 +92,52 @@ createApp({
     },
     async switchTab(key) {
       this.activeTab = key;
-      this.resetForm();
+      this.closeEditor();
       await this.loadItems();
+    },
+    openCreateForm() {
+      this.form = this.blankForm();
+      this.showEditor = true;
+      this.statusText = this.useCloud ? '当前为云端模式：所有人都可见' : '当前为本地演示模式';
+      this.$nextTick(() => {
+        if (this.$refs.fileInput) this.$refs.fileInput.value = '';
+      });
+    },
+    closeEditor() {
+      this.showEditor = false;
+      this.form = this.blankForm();
+      if (this.$refs.fileInput) this.$refs.fileInput.value = '';
+    },
+    editItem(item) {
+      this.form = {
+        id: item.id,
+        title: item.title,
+        description: item.description || '',
+        itemTime: toDateTimeLocalValue(item.createdAt || item.updatedAt || new Date()),
+        imageFile: null,
+        imageDataUrl: item.imagePath || ''
+      };
+      this.showEditor = true;
+      this.statusText = '正在修改内容';
+      this.$nextTick(() => {
+        if (this.$refs.fileInput) this.$refs.fileInput.value = '';
+      });
     },
     async pickImage(event) {
       const [file] = event.target.files;
       this.form.imageFile = file || null;
-      this.form.imageDataUrl = '';
-
       if (!file) {
-        this.statusText = '填写内容后可添加到右侧展示区';
+        this.form.imageDataUrl = '';
         return;
       }
 
       this.statusText = `正在处理图片：${file.name}`;
       try {
         this.form.imageDataUrl = await this.fileToCompressedDataUrl(file);
+        if (!this.form.title) {
+          const dot = file.name.lastIndexOf('.');
+          this.form.title = dot > 0 ? file.name.slice(0, dot) : file.name;
+        }
         this.statusText = `已选择图片：${file.name}`;
       } catch {
         this.form.imageFile = null;
@@ -123,51 +166,21 @@ createApp({
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
       const width = Math.max(1, Math.round(image.width * scale));
       const height = Math.max(1, Math.round(image.height * scale));
-
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, width, height);
+      canvas.getContext('2d').drawImage(image, 0, 0, width, height);
       return canvas.toDataURL('image/jpeg', 0.82);
     },
     dataUrlToBlob(dataUrl) {
       const parts = dataUrl.split(',');
       const mime = parts[0].match(/:(.*?);/)[1];
       const binary = atob(parts[1]);
-      const len = binary.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
       return new Blob([bytes], { type: mime });
     },
-    resetForm() {
-      this.form = {
-        id: null,
-        title: '',
-        description: '',
-        imageFile: null,
-        imageDataUrl: ''
-      };
-      this.statusText = this.useCloud
-        ? '当前为云端模式：所有人都可见'
-        : '当前为本地演示模式：数据保存在当前浏览器';
-      if (this.$refs.fileInput) {
-        this.$refs.fileInput.value = '';
-      }
-    },
-    editItem(item) {
-      this.form = {
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        imageFile: null,
-        imageDataUrl: item.imagePath || ''
-      };
-      this.statusText = '正在修改，可重新选择图片覆盖原图片';
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
     async loadItems() {
-      this.statusText = '正在读取内容...';
       if (this.useCloud) {
         await this.loadItemsFromCloud();
       } else {
@@ -179,7 +192,7 @@ createApp({
         const query = new URLSearchParams({
           select: 'id,category,title,description,image_path,created_at,updated_at',
           category: `eq.${this.activeTab}`,
-          order: 'updated_at.desc'
+          order: 'created_at.desc'
         });
         const url = `${this.supabase.url}/rest/v1/space_items?${query.toString()}`;
         const response = await fetch(url, { headers: this.requestHeaders });
@@ -205,7 +218,7 @@ createApp({
       const allItems = this.readLocalItems();
       this.items = allItems
         .filter((item) => item.category === this.activeTab)
-        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+        .sort((a, b) => String(b.createdAt || b.updatedAt).localeCompare(String(a.createdAt || a.updatedAt)));
       this.statusText = '内容已加载（本地浏览器）';
     },
     readLocalItems() {
@@ -241,10 +254,9 @@ createApp({
       }
     },
     async uploadImageToCloud() {
-      if (!this.form.imageDataUrl) return '';
+      if (!this.form.imageDataUrl || !this.form.imageFile) return '';
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
       const objectPath = `${this.activeTab}/${fileName}`;
-      const blob = this.dataUrlToBlob(this.form.imageDataUrl);
       const uploadUrl = `${this.supabase.url}/storage/v1/object/${this.supabase.bucket}/${objectPath}`;
       const response = await fetch(uploadUrl, {
         method: 'POST',
@@ -253,72 +265,56 @@ createApp({
           'Content-Type': 'image/jpeg',
           'x-upsert': 'true'
         },
-        body: blob
+        body: this.dataUrlToBlob(this.form.imageDataUrl)
       });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
+      if (!response.ok) throw new Error(await response.text());
       return `${this.supabase.url}/storage/v1/object/public/${this.supabase.bucket}/${objectPath}`;
     },
     async saveItemByCloud() {
       this.statusText = this.form.id ? '正在保存修改...' : '正在添加...';
       try {
         const now = new Date().toISOString();
-        let imagePath = this.form.id ? (this.items.find((x) => x.id === this.form.id)?.imagePath || '') : '';
-        if (this.form.imageDataUrl && this.form.imageFile) {
+        const itemTime = this.toIsoFromDateTimeLocal(this.form.itemTime) || now;
+        const existing = this.items.find((item) => item.id === this.form.id);
+        let imagePath = this.form.id ? (existing?.imagePath || '') : '';
+        if (this.form.imageFile) {
           imagePath = await this.uploadImageToCloud();
         }
 
-        if (this.form.id) {
-          const url = `${this.supabase.url}/rest/v1/space_items?id=eq.${this.form.id}`;
-          const payload = {
-            category: this.activeTab,
-            title: this.form.title,
-            description: this.form.description,
-            image_path: imagePath,
-            updated_at: now
-          };
-          const response = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-              ...this.requestHeaders,
-              'Content-Type': 'application/json',
-              Prefer: 'return=representation'
-            },
-            body: JSON.stringify(payload)
-          });
-          if (!response.ok) throw new Error(await response.text());
-        } else {
-          const url = `${this.supabase.url}/rest/v1/space_items`;
-          const payload = {
-            category: this.activeTab,
-            title: this.form.title,
-            description: this.form.description,
-            image_path: imagePath,
-            created_at: now,
-            updated_at: now
-          };
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              ...this.requestHeaders,
-              'Content-Type': 'application/json',
-              Prefer: 'return=representation'
-            },
-            body: JSON.stringify(payload)
-          });
-          if (!response.ok) throw new Error(await response.text());
-        }
+        const payload = {
+          category: this.activeTab,
+          title: this.form.title,
+          description: this.form.description,
+          image_path: imagePath,
+          created_at: itemTime,
+          updated_at: now
+        };
+
+        const isEdit = !!this.form.id;
+        const url = isEdit
+          ? `${this.supabase.url}/rest/v1/space_items?id=eq.${this.form.id}`
+          : `${this.supabase.url}/rest/v1/space_items`;
+        const response = await fetch(url, {
+          method: isEdit ? 'PATCH' : 'POST',
+          headers: {
+            ...this.requestHeaders,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(await response.text());
 
         await this.loadItemsFromCloud();
-        this.resetForm();
+        this.closeEditor();
       } catch {
         this.statusText = '云端保存失败，请检查 Supabase 配置与策略';
       }
     },
     async saveItemByLocal() {
       const allItems = this.readLocalItems();
-      const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const now = new Date().toISOString();
+      const itemTime = this.toIsoFromDateTimeLocal(this.form.itemTime) || now;
 
       if (this.form.id) {
         const target = allItems.find((x) => x.id === this.form.id);
@@ -326,10 +322,9 @@ createApp({
           target.title = this.form.title;
           target.description = this.form.description;
           target.category = this.activeTab;
+          target.createdAt = itemTime;
           target.updatedAt = now;
-          if (this.form.imageDataUrl) {
-            target.imagePath = this.form.imageDataUrl;
-          }
+          if (this.form.imageDataUrl) target.imagePath = this.form.imageDataUrl;
         }
       } else {
         allItems.push({
@@ -338,23 +333,20 @@ createApp({
           title: this.form.title,
           description: this.form.description,
           imagePath: this.form.imageDataUrl || '',
-          createdAt: now,
+          createdAt: itemTime,
           updatedAt: now
         });
       }
 
-      const ok = this.writeLocalItems(allItems);
-      if (!ok) {
+      if (!this.writeLocalItems(allItems)) {
         this.statusText = '保存失败：图片过大，请换更小的图片或删除旧内容后重试';
         return;
       }
       this.loadItemsFromLocal();
-      this.resetForm();
+      this.closeEditor();
     },
     async deleteItem(id) {
-      if (!confirm('确定删除这条内容吗？')) {
-        return;
-      }
+      if (!confirm('确定删除这条内容吗？')) return;
       if (this.useCloud) {
         await this.deleteItemByCloud(id);
       } else {
@@ -386,6 +378,21 @@ createApp({
     },
     closePreview() {
       this.previewItem = null;
+    },
+    toDateTimeLocal(value) {
+      return toDateTimeLocalValue(value);
+    },
+    toIsoFromDateTimeLocal(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    },
+    formatDisplayTime(value) {
+      if (!value) return '未填写时间';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
   }
 }).mount('#app');
