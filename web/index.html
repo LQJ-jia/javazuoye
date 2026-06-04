@@ -15,6 +15,32 @@
       </div>
     </section>
 
+    <section v-else-if="page === 'login'" class="login-screen">
+      <div class="login-shell">
+        <h2>选择进入方式</h2>
+        <div class="login-options">
+          <button class="primary-action" @click="enterAsGuest">访客登入</button>
+          <button class="secondary-action" @click="showAdminLogin = true">管理员登入</button>
+        </div>
+
+        <form v-if="showAdminLogin" class="admin-login" @submit.prevent="adminLogin">
+          <label>
+            管理员账号
+            <input v-model.trim="auth.username" autocomplete="username" placeholder="请输入账号">
+          </label>
+          <label>
+            管理员密码
+            <input v-model="auth.password" type="password" autocomplete="current-password" placeholder="请输入密码">
+          </label>
+          <p v-if="auth.error" class="login-error">{{ auth.error }}</p>
+          <div class="login-actions">
+            <button type="button" class="ghost-action" @click="showAdminLogin = false">取消</button>
+            <button type="submit" class="primary-action compact">进入管理</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <section v-else class="workspace">
       <aside class="sidebar">
         <div class="brand">
@@ -42,7 +68,7 @@
             <p class="eyebrow">{{ currentTab.name }}</p>
             <h2>{{ currentTab.title }}</h2>
           </div>
-          <button class="secondary-action" @click="openCreateForm">新增内容</button>
+          <button v-if="isAdmin" class="secondary-action" @click="openCreateForm">新增内容</button>
         </header>
 
         <section class="gallery" :aria-label="currentTab.name">
@@ -55,7 +81,7 @@
               <h3>{{ item.title }}</h3>
               <p>{{ item.description || '暂无备注说明' }}</p>
               <small>时间：{{ formatDisplayTime(item.createdAt || item.updatedAt) }}</small>
-              <div class="card-actions">
+              <div v-if="isAdmin" class="card-actions">
                 <button class="ghost-action" @click="editItem(item)">修改</button>
                 <button class="danger-action" @click="deleteItem(item.id)">删除</button>
               </div>

@@ -1,12 +1,21 @@
 const { createApp } = Vue;
 
 const STORAGE_KEY = 'luqin-space-items-v2';
+const ADMIN_HASH = '6d8ccd8a4b742c4f08259229706a98f383d49393c084059da93b8ec42184517b';
 
 function toDateTimeLocalValue(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().slice(0, 16);
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const buffer = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(buffer)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function getSupabaseConfig() {
@@ -27,6 +36,13 @@ createApp({
   data() {
     return {
       page: 'home',
+      role: '',
+      showAdminLogin: false,
+      auth: {
+        username: '',
+        password: '',
+        error: ''
+      },
       activeTab: 'homework',
       tabs: [
         { key: 'homework', name: '平时作业', title: '平时作业展示', icon: '作' },
@@ -49,6 +65,9 @@ createApp({
     };
   },
   computed: {
+    isAdmin() {
+      return this.role === 'admin';
+    },
     currentTab() {
       return this.tabs.find((tab) => tab.key === this.activeTab) || this.tabs[0];
     },
@@ -72,8 +91,28 @@ createApp({
       };
     },
     enterSpace() {
+      this.page = 'login';
+      this.showAdminLogin = false;
+      this.auth = { username: '', password: '', error: '' };
+    },
+    async enterAsGuest() {
+      this.role = 'guest';
       this.page = 'space';
-      this.detectModeAndLoad();
+      await this.detectModeAndLoad();
+    },
+    async adminLogin() {
+      this.auth.error = '';
+      const digest = await sha256Hex(`${this.auth.username}:${this.auth.password}`);
+      if (digest !== ADMIN_HASH) {
+        this.auth.error = '账号或密码错误';
+        this.auth.password = '';
+        return;
+      }
+
+      this.role = 'admin';
+      this.page = 'space';
+      this.auth = { username: '', password: '', error: '' };
+      await this.detectModeAndLoad();
     },
     async detectModeAndLoad() {
       this.statusText = '正在初始化...';
@@ -96,6 +135,10 @@ createApp({
       await this.loadItems();
     },
     openCreateForm() {
+      if (!this.isAdmin) {
+        this.statusText = '访客仅可观看';
+        return;
+      }
       this.form = this.blankForm();
       this.showEditor = true;
       this.statusText = this.useCloud ? '当前为云端模式：所有人都可见' : '当前为本地演示模式';
@@ -109,6 +152,10 @@ createApp({
       if (this.$refs.fileInput) this.$refs.fileInput.value = '';
     },
     editItem(item) {
+      if (!this.isAdmin) {
+        this.statusText = '访客仅可观看';
+        return;
+      }
       this.form = {
         id: item.id,
         title: item.title,
@@ -238,6 +285,10 @@ createApp({
       }
     },
     async saveItem() {
+      if (!this.isAdmin) {
+        this.statusText = '访客仅可观看';
+        return;
+      }
       if (!this.form.title && this.form.imageFile) {
         const dot = this.form.imageFile.name.lastIndexOf('.');
         this.form.title = dot > 0 ? this.form.imageFile.name.slice(0, dot) : this.form.imageFile.name;
@@ -346,6 +397,10 @@ createApp({
       this.closeEditor();
     },
     async deleteItem(id) {
+      if (!this.isAdmin) {
+        this.statusText = '访客仅可观看';
+        return;
+      }
       if (!confirm('确定删除这条内容吗？')) return;
       if (this.useCloud) {
         await this.deleteItemByCloud(id);
@@ -378,9 +433,6 @@ createApp({
     },
     closePreview() {
       this.previewItem = null;
-    },
-    toDateTimeLocal(value) {
-      return toDateTimeLocalValue(value);
     },
     toIsoFromDateTimeLocal(value) {
       if (!value) return '';
