@@ -9,6 +9,7 @@
 <body>
   <div id="app" v-cloak>
     <section v-if="page === 'home'" class="home-screen">
+      <canvas ref="particleCanvas" class="particle-canvas" aria-hidden="true"></canvas>
       <div class="home-shell">
         <h1>欢迎来到陆勤家的空间</h1>
         <button class="primary-action" @click="enterSpace">点击进入</button>
@@ -16,6 +17,7 @@
     </section>
 
     <section v-else-if="page === 'login'" class="login-screen">
+      <canvas ref="particleCanvas" class="particle-canvas" aria-hidden="true"></canvas>
       <div class="login-shell">
         <h2>选择进入方式</h2>
         <div class="login-options">

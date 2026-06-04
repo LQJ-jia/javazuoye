@@ -61,7 +61,10 @@ createApp({
       },
       useCloud: false,
       supabase: getSupabaseConfig(),
-      statusText: '准备就绪'
+      statusText: '准备就绪',
+      particles: [],
+      particleAnimation: 0,
+      particleResizeHandler: null
     };
   },
   computed: {
@@ -78,6 +81,23 @@ createApp({
         Authorization: `Bearer ${this.supabase.anonKey}`
       };
     }
+  },
+  watch: {
+    page() {
+      this.$nextTick(() => {
+        if (this.page === 'home' || this.page === 'login') {
+          this.startParticles();
+        } else {
+          this.stopParticles();
+        }
+      });
+    }
+  },
+  mounted() {
+    this.$nextTick(() => this.startParticles());
+  },
+  beforeUnmount() {
+    this.stopParticles();
   },
   methods: {
     blankForm() {
@@ -445,6 +465,85 @@ createApp({
       if (Number.isNaN(date.getTime())) return value;
       const pad = (num) => String(num).padStart(2, '0');
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    },
+    startParticles() {
+      this.stopParticles();
+      const canvas = this.$refs.particleCanvas;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      const createParticle = (width, height) => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.42,
+        vy: (Math.random() - 0.5) * 0.42,
+        radius: 1.4 + Math.random() * 2.8,
+        alpha: 0.25 + Math.random() * 0.45
+      });
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const count = Math.max(42, Math.min(96, Math.round((rect.width * rect.height) / 18000)));
+        this.particles = Array.from({ length: count }, () => createParticle(rect.width, rect.height));
+      };
+
+      const animate = () => {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < this.particles.length; i += 1) {
+          const particle = this.particles[i];
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+
+          if (particle.x < 0 || particle.x > width) particle.vx *= -1;
+          if (particle.y < 0 || particle.y > height) particle.vy *= -1;
+
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(37, 111, 230, ${particle.alpha})`;
+          ctx.fill();
+
+          for (let j = i + 1; j < this.particles.length; j += 1) {
+            const next = this.particles[j];
+            const dx = particle.x - next.x;
+            const dy = particle.y - next.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < 128) {
+              ctx.beginPath();
+              ctx.moveTo(particle.x, particle.y);
+              ctx.lineTo(next.x, next.y);
+              ctx.strokeStyle = `rgba(29, 95, 209, ${0.14 * (1 - distance / 128)})`;
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+          }
+        }
+
+        this.particleAnimation = requestAnimationFrame(animate);
+      };
+
+      resize();
+      this.particleResizeHandler = resize;
+      window.addEventListener('resize', resize, { passive: true });
+      this.particleAnimation = requestAnimationFrame(animate);
+    },
+    stopParticles() {
+      if (this.particleAnimation) {
+        cancelAnimationFrame(this.particleAnimation);
+        this.particleAnimation = 0;
+      }
+      if (this.particleResizeHandler) {
+        window.removeEventListener('resize', this.particleResizeHandler);
+        this.particleResizeHandler = null;
+      }
+      this.particles = [];
     }
   }
 }).mount('#app');
