@@ -60,6 +60,7 @@ createApp({
         imageDataUrl: ''
       },
       useCloud: false,
+      cloudError: false,
       supabase: getSupabaseConfig(),
       statusText: '准备就绪',
       particles: [],
@@ -136,17 +137,14 @@ createApp({
     },
     async detectModeAndLoad() {
       this.statusText = '正在初始化...';
-      this.useCloud = this.supabase.enabled && await this.tryCloudHealth();
+      this.cloudError = false;
+      this.useCloud = this.supabase.enabled;
       await this.loadItems();
-      this.statusText = this.useCloud ? '当前为云端模式：所有人都可见' : '当前为本地演示模式';
-    },
-    async tryCloudHealth() {
-      try {
-        const url = `${this.supabase.url}/rest/v1/space_items?select=id&limit=1`;
-        const response = await fetch(url, { headers: this.requestHeaders });
-        return response.ok;
-      } catch {
-        return false;
+      if (this.isAdmin && this.useCloud && !this.cloudError) {
+        await this.migrateLocalItemsToCloud();
+      }
+      if (this.useCloud && !this.cloudError) {
+        this.statusText = '当前为云端模式：所有人都可见';
       }
     },
     async switchTab(key) {
@@ -248,11 +246,13 @@ createApp({
       return new Blob([bytes], { type: mime });
     },
     async loadItems() {
-      if (this.useCloud) {
+      if (this.supabase.enabled) {
+        this.useCloud = true;
         await this.loadItemsFromCloud();
-      } else {
-        this.loadItemsFromLocal();
+        return;
       }
+      this.useCloud = false;
+      this.loadItemsFromLocal();
     },
     async loadItemsFromCloud() {
       try {
@@ -276,9 +276,9 @@ createApp({
         }));
         this.statusText = '内容已加载（云端）';
       } catch {
-        this.useCloud = false;
-        this.loadItemsFromLocal();
-        this.statusText = '云端连接失败，已切换到本地模式';
+        this.items = [];
+        this.cloudError = true;
+        this.statusText = '云端连接失败：请检查 Supabase 配置或网络，不会再保存到本地浏览器';
       }
     },
     loadItemsFromLocal() {
@@ -318,16 +318,21 @@ createApp({
         return;
       }
 
-      if (this.useCloud) {
+      if (this.supabase.enabled) {
+        this.useCloud = true;
         await this.saveItemByCloud();
-      } else {
-        await this.saveItemByLocal();
+        return;
       }
+      await this.saveItemByLocal();
     },
     async uploadImageToCloud() {
       if (!this.form.imageDataUrl || !this.form.imageFile) return '';
+      return this.uploadDataUrlToCloud(this.form.imageDataUrl, this.activeTab);
+    },
+    async uploadDataUrlToCloud(dataUrl, category) {
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl || '';
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
-      const objectPath = `${this.activeTab}/${fileName}`;
+      const objectPath = `${category}/${fileName}`;
       const uploadUrl = `${this.supabase.url}/storage/v1/object/${this.supabase.bucket}/${objectPath}`;
       const response = await fetch(uploadUrl, {
         method: 'POST',
@@ -336,7 +341,7 @@ createApp({
           'Content-Type': 'image/jpeg',
           'x-upsert': 'true'
         },
-        body: this.dataUrlToBlob(this.form.imageDataUrl)
+        body: this.dataUrlToBlob(dataUrl)
       });
       if (!response.ok) throw new Error(await response.text());
       return `${this.supabase.url}/storage/v1/object/public/${this.supabase.bucket}/${objectPath}`;
@@ -379,7 +384,60 @@ createApp({
         await this.loadItemsFromCloud();
         this.closeEditor();
       } catch {
-        this.statusText = '云端保存失败，请检查 Supabase 配置与策略';
+        this.statusText = '云端保存失败：请检查 Supabase 表策略和 Storage 策略';
+      }
+    },
+    async migrateLocalItemsToCloud() {
+      const localItems = this.readLocalItems();
+      if (!localItems.length) return;
+
+      try {
+        const query = new URLSearchParams({
+          select: 'category,title,created_at'
+        });
+        const url = `${this.supabase.url}/rest/v1/space_items?${query.toString()}`;
+        const response = await fetch(url, { headers: this.requestHeaders });
+        if (!response.ok) throw new Error(await response.text());
+        const existing = await response.json();
+        const existingKeys = new Set(
+          existing.map((item) => `${item.category}::${item.title}::${item.created_at || ''}`)
+        );
+
+        let migrated = 0;
+        for (const item of localItems) {
+          const createdAt = item.createdAt || item.updatedAt || new Date().toISOString();
+          const key = `${item.category}::${item.title}::${createdAt}`;
+          if (existingKeys.has(key)) continue;
+
+          const imagePath = await this.uploadDataUrlToCloud(item.imagePath || '', item.category || 'homework');
+          const payload = {
+            category: item.category || 'homework',
+            title: item.title || '未命名内容',
+            description: item.description || '',
+            image_path: imagePath,
+            created_at: createdAt,
+            updated_at: item.updatedAt || createdAt
+          };
+          const insertResponse = await fetch(`${this.supabase.url}/rest/v1/space_items`, {
+            method: 'POST',
+            headers: {
+              ...this.requestHeaders,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal'
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!insertResponse.ok) throw new Error(await insertResponse.text());
+          existingKeys.add(key);
+          migrated += 1;
+        }
+
+        if (migrated > 0) {
+          await this.loadItemsFromCloud();
+          this.statusText = `已把 ${migrated} 条本地旧内容同步到云端`;
+        }
+      } catch {
+        this.statusText = '本地旧内容同步失败：请检查 Supabase 表策略和 Storage 策略';
       }
     },
     async saveItemByLocal() {
@@ -422,11 +480,12 @@ createApp({
         return;
       }
       if (!confirm('确定删除这条内容吗？')) return;
-      if (this.useCloud) {
+      if (this.supabase.enabled) {
+        this.useCloud = true;
         await this.deleteItemByCloud(id);
-      } else {
-        this.deleteItemByLocal(id);
+        return;
       }
+      this.deleteItemByLocal(id);
     },
     async deleteItemByCloud(id) {
       this.statusText = '正在删除...';

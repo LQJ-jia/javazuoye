@@ -231,6 +231,7 @@ h1 {
 .content { padding: 28px; overflow: auto; }
 .content-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .content-header h2 { margin: 0; color: var(--blue-900); font-size: 28px; }
+.status-line { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
 .secondary-action { padding: 10px 16px; color: var(--blue-700); background: var(--white); border: 1px solid var(--line); font-weight: 700; }
 
 .panel { background: var(--white); border: 1px solid var(--line); border-radius: 8px; }
