@@ -13,6 +13,10 @@ create table if not exists public.space_items (
 
 alter table public.space_items enable row level security;
 
+grant usage on schema public to anon;
+grant select, insert, update, delete on public.space_items to anon;
+grant usage, select on all sequences in schema public to anon;
+
 drop policy if exists "space_items_select_all" on public.space_items;
 create policy "space_items_select_all"
 on public.space_items for select
