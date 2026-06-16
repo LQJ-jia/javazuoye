@@ -77,10 +77,11 @@ createApp({
     },
     requestHeaders() {
       if (!this.supabase.enabled) return {};
-      return {
-        apikey: this.supabase.anonKey,
-        Authorization: `Bearer ${this.supabase.anonKey}`
-      };
+      const headers = { apikey: this.supabase.anonKey };
+      if (this.supabase.anonKey.startsWith('eyJ')) {
+        headers.Authorization = `Bearer ${this.supabase.anonKey}`;
+      }
+      return headers;
     }
   },
   watch: {
@@ -275,10 +276,11 @@ createApp({
           updatedAt: row.updated_at || ''
         }));
         this.statusText = '内容已加载（云端）';
-      } catch {
+      } catch (error) {
+        console.error('Supabase load failed:', error);
         this.items = [];
         this.cloudError = true;
-        this.statusText = '云端连接失败：请检查 Supabase 配置或网络，不会再保存到本地浏览器';
+        this.statusText = '';
       }
     },
     loadItemsFromLocal() {
